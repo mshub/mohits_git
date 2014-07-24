@@ -1,0 +1,354 @@
+#!/bin/bash
+
+# Revision History:
+#	AUTHOR: 	Mail_ID			Date		Comment			
+#	MOHIT SHARMA  	<mohits@nvidia.com>	25th Jan 2014	<Santiy window operations stressed out>
+#
+# FILE: 
+# (C) NVIDIA Corp
+# 
+# Target use:
+# To stress Ubuntu-Desktop graphic test related to X
+# Meant for L4T (making use of Ubuntu Desktop file system)
+
+#set -e
+
+[ `whoami` != root ] && printf "\nThe script needs to be run with root privileges e.g.\n\n    sudo $(basename $0)\n\n" && exit 1
+
+NAUTIWIN=20
+WINTYPE=4
+
+XDOWN="xdotool keydown"
+XUP="xdotool keyup"
+XKEY="xdotool key"
+
+ECODE=1
+
+DEF_HOME=/home/ubuntu
+
+function red_flag 
+{
+        echo -e "$RED_COLOR $@ $NORM_COLOR"
+}
+export -f red_flag
+
+function yellow_flag
+{
+        echo -e "$YELLOW_COLOR $@ $NORM_COLOR"
+}
+export -f yellow_flag
+
+function green_flag 
+{
+        echo -e "$GREEN_COLOR $@ $NORM_COLOR"
+}
+export -f green_flag
+
+function ctrlSuper()
+{
+	$XDOWN ctrl && $XDOWN super && $XKEY $@ && $XUP ctrl && $XUP super
+	#ECODE=$?
+}
+export -f ctrlSuper
+
+function superShift()
+{
+	$XDOWN super && $XDOWN shift && $XKEY $@ && $XUP super && $XUP shift
+}
+export -f superShift
+
+function ctrlAlt()
+{
+	$XDOWN ctrl; $XDOWN alt ; $XKEY $@; $XUP ctrl; $XUP alt
+}
+export -f ctrlAlt
+
+function ctrlAltShift()
+{
+	$XDOWN ctrl; $XDOWN alt; $XDOWN shift; $XKEY $@; $XUP ctrl; $XUP alt; $XUP shift
+}
+export -f ctrlAltShift
+
+function openWin()
+{
+	for  i in `seq 1 $1`; do superShift 1; sleep 1; done
+	sleep 2
+}
+export -f openWin
+
+function closeWin()
+{
+	$XDOWN ctrl && $XKEY q && $XUP ctrl
+	sleep 2
+}
+export -f closeWin
+
+function xsuper()
+{
+	$XDOWN super && $XKEY $@ && $XUP super
+}
+export -f xsuper
+
+function gang_run()
+{
+	RUN_TEST=$@
+
+	: ${NLIMIT:=6}
+	: ${NDELAY:=0}
+	for i in `seq 1 $NLIMIT`; do
+		yellow_flag "Started: Instance number = $i" 
+		#do run the test 
+		$RUN_TEST & 
+		#[ $NDELAY -ne 0 ] && sleep $NDELAY
+	done
+}
+export -f gang_run
+
+function test1()
+{
+	echo -e "\nStarting nautilus stress test..."
+	#for i in `seq 1 $NAUTIWIN`; do superShift 1; sleep 1; done
+	openWin $NAUTIWIN
+	for i in `seq 1 $ITR`; do $XKEY super+w; sleep 1; done
+	sleep 3
+	closeWin
+}
+export -f test1
+
+function test2()
+{
+	echo -e "\nStressing alt+Tab and alt+\` functionality..."
+	openWin $NAUTIWIN
+	for i in `seq 2 $WINTYPE`; do $XKEY super+$i; sleep 1; done
+	$XDOWN alt; for i in `seq 1 $ITR`; do $XKEY Tab; sleep .5; $XKEY asciitilde; sleep .5; done; $XUP alt
+	sleep 3
+	closeWin
+}
+export -f test2
+
+function test3()
+{
+	[ -f $DEF_HOME/nvtest -a -f $DEF_HOME/gles2_gears.so ] || echo -e "\n tests_output files not found, exiting test..."
+	echo -e "\nStarting gles2_stress test..."
+	/home/ubuntu/nvtest /home/ubuntu/gles2_gears.so $DUR --Twinsys x11 --Twx 0 --Twy 0 --Tww 1920 --Twh 1080 & sleep 2
+	sleep $DUR
+}
+export -f test3
+
+function test4()
+{
+	[ -f $DEF_HOME/nvtest -a -f $DEF_HOME/gles2_gears.so ] || echo -e "\n tests_output files not found, exiting test..."
+	echo -e "\nStarting gles2_stress test multiple instance test..."
+	NLIMIT=10 NDELAY=2 gang_run /home/ubuntu/nvtest /home/ubuntu/gles2_gears.so $DUR --Twinsys x11 --Twx 0 --Twy 0 --Tww 640 --Twh 480 &
+	sleep `expr $DUR + 50`
+}
+export -f test4
+
+function test5()
+{
+	echo -e "\nDesktop stress..."
+	openWin 1
+	for i in `seq 1 $ITR`; do ctrlSuper d; sleep .5; done
+	closeWin
+}
+export -f test5
+
+function test6()
+{
+	echo -e "\nWorkspace stress..."
+	gsettings set org.compiz.core:/org/compiz/profiles/unity/plugins/core/ hsize 2
+	gsettings set org.compiz.core:/org/compiz/profiles/unity/plugins/core/ vsize 2
+        sleep 1
+	openWin 1
+	for i in `seq 1 $ITR`; do
+		for i in Right Down Left Up; do ctrlAlt $i && sleep 1; done
+	done
+	closeWin
+}
+export -f test6
+
+function test7()
+{
+	echo -e "\nWorkspace drag stress..."
+	gsettings set org.compiz.core:/org/compiz/profiles/unity/plugins/core/ hsize 2
+	gsettings set org.compiz.core:/org/compiz/profiles/unity/plugins/core/ vsize 2
+	sleep 1
+	openWin 1
+	for i in `seq 1 $ITR`; do
+		for i in Right Down Left Up; do ctrlAltShift $i && sleep 1; done
+	done
+	closeWin
+}
+export -f test7
+
+function test8()
+{
+	echo -e "\nLauncher stress..."
+	for i in `seq 0 $ITR`; do $XKEY super && sleep 1; done
+}
+export -f test8
+
+function test9()
+{
+	echo -e "\nVT switching stress..."
+	for i in `seq 1 $ITR`; do
+		#for i in F1 F2 F3 F4 F5 F6 F7; do echo -e "\nEntering $i" && ctrlAlt $i && sleep 1; done
+		for i in `seq 1 7`; do echo -e "\nEntering $i" && sudo chvt $i && sleep 1; done
+	done
+}
+export -f test9
+
+function test10()
+{
+	echo -e "\nTrash window stress..."
+	for i in `seq 1 $ITR`; do xsuper t && sleep 1; done
+	closeWin 
+}
+export -f test10
+
+function test11()
+{
+	echo -e "\nOrientation change stress..."
+	openWin 1
+	for i in `seq 1 $ITR`; do
+		for j in `seq 0 5`; do
+		       	xrandr -o $j; sleep 5;
+	       	done
+	done
+	xrandr -o 0
+}
+export -f test11
+
+function test12()
+{
+	echo -e "\nMax/Minimize stress..."
+	superShift 1; sleep 2
+	for i in `seq 1 $ITR`; do
+		ctrlSuper Up; sleep 1
+		ctrlSuper Down; sleep 1
+	done
+	xrandr -o 0
+}
+export -f test12
+
+function xdotoolCheck()
+{
+	echo -e "Checking required tools availability..."
+	dpkg-query -W ubuntu-desktop xdotool > /dev/null 2>&1
+	[ `echo $?` -eq 0 ] && echo -e "Tools available. Continuing..." || \
+	while true; do
+		read -p "ubuntu-desktop with xdotool required to continue. Do you wish to install[Y/n]? " yn
+		case $yn in
+			[Yy]* ) sudo apt-get install xdotool ubuntu-desktop; break;;
+			[Nn]* ) exit 1;;
+		* ) echo "Please answer yes or no.";;
+		esac
+	done
+}
+export -f xdotoolCheck
+
+function nv_apps_check()
+{
+	echo -e "Checking for tests_output files for nv tests..."
+	[ -f $DEF_HOME/nvtest -a -f $DEF_HOME/gles2_gears.so ] \
+		&& echo -e "\ntests_output files found..." || \
+		echo -e "tests_output files missing. nvtest based test will not work"
+}
+export -f nv_apps_check
+
+function Usage()
+{
+cat << EOF
+Usage:
+	graphic_stress -t<TEST_NUM>,<ITR>,<NUM> ...
+
+Options:
+        -TEST_NUM	Test case number to be executed
+	-NUM		Number of iterations
+	-DUR		Duration of test in seconds
+
+Examples:
+	./graphic_stress -t1,10,600 -t5,10,600 -t7,40,100
+	Above will execute testcase 1 with 10 iterations 600 secs each
+		                         5 with 10 iterations 600 secs each				    
+					 7 with 40 iterations 100 secs each
+	OR
+
+	./graphic_stress -a
+	To execute all tests with default values	
+
+To show available tests:
+	./graphic_stress -c
+
+EOF
+return 0
+}
+
+function Test_Manual()
+{
+cat << EOF
+Available tests:
+	1: nautilus stress test
+	2: alt+Tab and alt+\` functionality stress test
+	3: gles2_stress test
+	4: gles2_stress ultiple instance test
+	5: Showing desktop stress
+	6: Workspace switching stress
+	7: Workspace drag stress
+	8: Launcher stress
+	9: VT switching stress
+	10: Trash window launch stress
+	11: Orientation change stress
+
+Run below for usage:
+	./graphic_stress -u
+
+EOF
+}
+
+function test_exec()
+{
+	read TEST_NO ITR DUR<<<$(echo $1 | tr , '\n')
+	[ -z "$ITR" ] && ITR=500
+	[ -z "$DUR" ] && DUR=1000
+	echo -e "\nStarting test$TEST_NO with iterations:$ITR, duration:$DUR (conditional)" 
+	test${TEST_NO} $ITR $DUR
+}
+
+TOTALTESTS=12
+
+function test_main()
+{
+	xdotoolCheck
+
+	nv_apps_check
+	
+	export DISPLAY=:0 && xset -dpms && xset s off >> /dev/null 2>&1
+
+	echo -e "Making Ubuntu user password free..."
+	sudo passwd -d ubuntu > /dev/null 2>&1
+
+	printf '=%.0s' {1..50} && echo -e "\n"
+
+	local OPTARG=$OPTARG
+	while getopts "huct:a" opt; do
+		case "$opt" in
+			t) ARG=$OPTARG
+				read a b c <<< $(echo $ARG | tr , '\n')
+				[[ $a$b$c != *[!0-9]* ]] && test_exec $ARG || ( echo -e "\nError: Non-integer values entered" && Usage )
+				;;
+			a) for i in `seq 1 $TOTALTESTS`; do
+				test_exec $i
+				done; 
+				break;
+				;;
+			c) Test_Manual && return 0
+				;;
+			h|u|*) Usage && return 3
+				;;
+		esac
+	echo -e "\nTest completed... Exiting."
+	done
+}
+
+[ $# -eq 0 ] && Usage || test_main $@
