@@ -1,0 +1,139 @@
+#!/bin/bash
+
+export YELL_COLOR='\E[33m'        # Yellow text
+export FINE_COLOR='\E[32m'        # Green text
+export NORM_COLOR='\E[0m'         # Normalize text
+export BLUE_BACK='\E[44m'         # Blue back
+export CYAN_BACK='\E[45m'         # Cyan back
+
+[ `whoami` != root ] && echo Error: Run this script $0 as a root user && exit 1
+
+echo -e "\n$BLUE_BACKInstallation might take a while depending on your network connection and your system configurations. Please standby...$NORM_COLOR"
+echo -e "\n$CYAN_BACKNOTE: This script will require your interaction at some place for GUI based acceptance...$NORM_COLOR\n"
+
+JAVALOC="/usr/lib/jvm/java-6-sun/jre/bin/java"
+PLUGINDIR="/usr/lib/jvm/java-6-sun/jre/lib"
+
+checkEUID () {
+	if [[ $EUID -ne 0 ]]; then
+		printf "\nThe script needs to be run with root privileges e.g.\n\n    sudo $(basename $0)\n\n"
+		exit 1
+	fi
+}
+
+checkDistro () {
+	if [ -z "$(grep Ubuntu /etc/lsb-release)" ]; then
+		printf "\nThis script is designed for Ubuntu Linux! Exiting...\n\n"
+		exit 1
+	fi
+}
+
+checkNetworking () {
+	if [ "$(ping -w 1 -c 1 nvdebmirror.nvidia.com 2>&1 | egrep -c "\<unknown\>|\<unreachable\>")" -ne 0 ]; then
+		printf "\nnvdebmirror.nvidia.com is unreachable.\nPlease check your network connection and run the script again.\n\n"
+		exit 1
+	fi
+}
+
+addRepo () {
+	if [ -z "$(grep nvdebmirror /etc/apt/sources.list)" ]; then
+		printf "\nAdding an internal NVIDIA repository for Java...\n"
+		wget -q http://nvdebmirror.nvidia.com/ubuntu/archive-key.asc -O- | apt-key add - > /dev/null
+		add-apt-repository "deb http://nvdebmirror.nvidia.com/ubuntu lucid main"
+	else
+		printf "\nAn internal NVIDIA repository for Java already exists. Skipping...\n"
+	fi
+}
+
+installJava () {
+		if [ ! -d /usr/share/doc/sun-java6-plugin ]; then
+		printf "Installing Java...\n"
+		printf "sun-java6-jre shared/accepted-sun-dlj-v1-1 boolean true" | debconf-set-selections
+		apt-get update > /dev/null 2>&1
+		apt-get -y --force-yes install sun-java6-plugin > /dev/null
+	else
+		printf "Java already installed. Skipping...\n"
+	fi
+}
+
+install64BitSupport () {
+	if [ "$(uname -m)" = "x86_64" ]; then
+		if [ ! -d /etc/ia32-java-6-sun ]; then
+			printf "Installing 32 bit Java...\n"
+			apt-get -y --force-yes install ia32-sun-java6-bin > /dev/null 2>&1
+		else
+			printf "32 bit Java already installed. Skipping...\n"
+		fi
+
+		if [ -z "$(file $JAVALOC | grep Bourne-Again)" ]; then
+			printf "Patching Java for Juniper...\n"
+			cp $JAVALOC $JAVALOC.orig
+			printf '#!/bin/bash\n' > $JAVALOC
+			printf 'if [ "$3x" = "NCx" ]; then\n' >> $JAVALOC
+			printf '	/usr/lib/jvm/ia32-java-6-sun/jre/bin/java "$@"\n' >> $JAVALOC
+			printf "else\n" >> $JAVALOC
+			printf "	$JAVALOC.orig \"\$@\"\n" >> $JAVALOC
+			printf "fi\n" >> $JAVALOC
+			chmod 755 $JAVALOC $JAVALOC.orig
+		else
+			printf "Java already patched for Juniper. Skipping...\n"
+		fi
+	fi
+}
+
+setDefaultJava () {
+	update-alternatives --set java $JAVALOC > /dev/null
+	if [ "$(uname -m)" = "x86_64" ]; then
+		update-alternatives --set mozilla-javaplugin.so $PLUGINDIR/amd64/libnpjp2.so > /dev/null
+	else
+		update-alternatives --set mozilla-javaplugin.so $PLUGINDIR/i386/libnpjp2.so > /dev/null
+	fi
+}
+
+quit () {
+	printf "Done!\n\n"
+	exit 0
+}
+
+checkEUID
+checkDistro
+checkNetworking
+addRepo
+installJava
+install64BitSupport
+setDefaultJava
+
+echo -e "\n\n$YELL_COLOR Adding required repositories and updating sources.list... $NORM_COLOR"
+echo -e "\n\nAdding pipelight repo..\n" && sudo apt-add-repository ppa:pipelight/stable -y
+echo -e "\n\nAdding webupd8 repo..\n" && sudo add-apt-repository ppa:nilarimogard/webupd8 -y
+echo -e "\n\nUpdating system with new repos..\n" && sudo apt-get update
+
+echo -e "\n\n$YELL_COLOR Installing system based tools... $NORM_COLOR"
+sudo apt-get install vnstat scrot cifs-utils x11vnc openssh-server openssh-client gdisk git git-core synaptic p7zip-rar unetbootin nfs-common nfs-kernel-server -y
+
+echo -e "\n\n$YELL_COLOR Installing Editors and plugins... $NORM_COLOR"
+sudo apt-get install vim -y
+
+echo -e "\n\n$YELL_COLOR Installing internet based tools... $NORM_COLOR"
+sudo apt-get install curl axel html2text pidgin pidgin-sipe pidgin-indicator cobbler thunderbird -y
+
+echo -e "\n\n$YELL_COLOR Installing multimedia tools... $NORM_COLOR"
+sudo apt-get install libav-tools ubuntu-restricted-extras -y
+
+echo -e "\n\n$YELL_COLOR Installing dev tools... $NORM_COLOR"
+sudo apt-get install minicom build-essential python-software-propegitrties android-tools-adb android-tools-fastboot libncurses5-dev lib32ncurses5 lib32z1 lib32bz2-1.0 lib32stdc++6 -y
+
+#echo -e "\n\n$YELL_COLOR Installing ARM compile support... $NORM_COLOR"
+#sudo apt-get install gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi gcc-arm-linux-gnueabihf -y
+
+echo -e "\n\n$FINE_COLOR Changing PS1... $NORM_COLOR"
+echo "export PS1='\u@\W$ '" >> /root/.bashrc
+echo "export PS1='\u@\W$ '" >> $HOME/.bashrc
+
+echo -e "\n\n$YELL_COLOR Installing pipelight/silverlight... $NORM_COLOR"
+sudo apt-get install pipelight-multi -y
+sudo pipelight-plugin --enable silverlight
+
+echo -e "\n\n$FINE_COLOR Installation completed successfully... $NORM_COLOR"
+
+quit
